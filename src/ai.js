@@ -282,8 +282,19 @@ class AIConversationEngine {
           `Customer: ${phoneNumber}\n\n` +
           `Reply: A (approve), C (call customer), Q [amount] (custom quote), X (pass)`;
         
-        // Here you'd send SMS to contractor - we'll add this in sms.js
-        // For now, update conversation state
+        // Log contractor notification for polling
+        console.log('CONTRACTOR_NOTIFICATION:' + JSON.stringify({
+          contractor_id: context.contractor_id,
+          contractor_phone: contractor.phone_number,
+          business_name: contractor.business_name,
+          job_id: context.job_id,
+          problem: job.problem_description,
+          location: job.customer_address,
+          urgency: job.urgency_level,
+          cost_min: job.estimated_cost_min,
+          cost_max: job.estimated_cost_max,
+          customer_phone: phoneNumber
+        }));
         db.updateConversationState(phoneNumber, 'AWAITING_CONTRACTOR_RESPONSE', context);
         
         return `Great! I've sent your request to ${contractor.business_name}. They'll respond soon with confirmation or may call you directly. I'll keep you updated!`;

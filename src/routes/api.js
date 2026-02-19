@@ -52,6 +52,16 @@ router.get('/stats', (req, res) => {
   }
 });
 
+// Get recent jobs (for contractor notifications)
+router.get('/jobs/recent', (req, res) => {
+  try {
+    const jobs = db.queryAll("SELECT j.*, c.business_name as contractor_name FROM jobs j LEFT JOIN contractors c ON j.contractor_id = c.id ORDER BY j.created_at DESC LIMIT 10");
+    res.json({ jobs });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Add contractor
 router.post('/contractors', (req, res) => {
   try {
