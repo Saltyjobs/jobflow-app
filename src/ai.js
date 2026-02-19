@@ -34,7 +34,7 @@ class AIConversationEngine {
           return await this.handleIdleState(phoneNumber, incomingMessage, context);
       }
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('Error processing message:', error.message, error.stack);
       return "I'm sorry, I encountered an error. Please try again or contact support.";
     }
   }
@@ -232,8 +232,13 @@ class AIConversationEngine {
         const urgencyMap = { '1': 'low', '2': 'medium', '3': 'high', '4': 'emergency' };
         context.urgency_level = urgencyMap[message.trim()] || 'medium';
         
+        // Categorize service if not done yet (happens when first message was the problem)
+        if (!context.service_category && context.problem_description) {
+          context.service_category = await this.categorizeService(context.problem_description);
+        }
+        context.service_category = context.service_category || 'general_handyman';
+        
         // New model: each number belongs to one contractor, no need to ask for zip
-        // Get the default contractor for this number (or first active contractor)
         const defaultContractor = db.getDefaultContractor ? db.getDefaultContractor() : null;
         const allContractors = db.getAllContractors();
         const selectedContractor = defaultContractor || (allContractors.length > 0 ? allContractors[0] : null);
