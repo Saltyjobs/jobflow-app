@@ -9,8 +9,8 @@ const router = express.Router();
 
 // Twilio webhook signature validation middleware
 const validateTwilioSignature = (req, res, next) => {
-  if (process.env.NODE_ENV === 'development') {
-    // Skip validation in development
+  if (process.env.NODE_ENV === 'development' || process.env.SKIP_TWILIO_VALIDATION === 'true') {
+    // Skip validation in development or when explicitly disabled
     return next();
   }
 
