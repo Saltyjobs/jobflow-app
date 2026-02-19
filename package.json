@@ -1,0 +1,35 @@
+{
+  "name": "jobflow-app",
+  "version": "1.0.0",
+  "description": "AI-powered SMS bot for local service businesses",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "seed": "node scripts/seed.js",
+    "setup-db": "node scripts/setup-db.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^9.2.2",
+    "twilio": "^4.19.3",
+    "openai": "^4.20.1",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "body-parser": "^1.20.2",
+    "uuid": "^9.0.1",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": [
+    "sms",
+    "twilio",
+    "ai",
+    "service-business",
+    "contractors"
+  ],
+  "author": "JobFlow",
+  "license": "MIT"
+}

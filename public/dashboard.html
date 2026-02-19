@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobFlow Contractor Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .login-form {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: 50px auto;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 36px;
+            font-weight: bold;
+            color: #007bff;
+            display: block;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .tabs {
+            display: flex;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px 20px;
+            background: white;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .tab.active {
+            background: #007bff;
+            color: white;
+        }
+
+        .tab:hover:not(.active) {
+            background: #f8f9fa;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .job-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+        }
+
+        .job-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .job-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .job-meta {
+            color: #666;
+            font-size: 14px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-scheduled {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-in-progress {
+            background: #cce5ff;
+            color: #004085;
+        }
+
+        .status-completed {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .job-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .job-meta {
+                flex-direction: column;
+                gap: 5px;
+            }
+
+            .job-actions {
+                justify-content: center;
+            }
+
+            .modal-content {
+                margin: 10% auto;
+                width: 95%;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Form -->
+        <div id="loginSection" class="login-form">
+            <h2 style="text-align: center; margin-bottom: 30px;">JobFlow Contractor Login</h2>
+            
+            <div id="phoneStep">
+                <div class="form-group">
+                    <label for="phoneNumber">Phone Number</label>
+                    <input type="tel" id="phoneNumber" placeholder="+1 (555) 123-4567" required>
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="requestVerification()">
+                    Send Verification Code
+                </button>
+            </div>
+
+            <div id="verificationStep" style="display: none;">
+                <p style="margin-bottom: 15px; text-align: center; color: #666;">
+                    Enter the 6-digit code sent to your phone
+                </p>
+                <div class="form-group">
+                    <label for="verificationCode">Verification Code</label>
+                    <input type="text" id="verificationCode" placeholder="123456" maxlength="6" required>
+                </div>
+                <button class="btn btn-primary" style="width: 100%;" onclick="verifyCode()">
+                    Verify & Login
+                </button>
+                <button class="btn btn-secondary" style="width: 100%; margin-top: 10px;" onclick="backToPhone()">
+                    Back
+                </button>
+            </div>
+
+            <div id="loginMessage" style="margin-top: 15px;"></div>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboardSection" style="display: none;">
+            <div class="header">
+                <div class="logo">JobFlow</div>
+                <div class="user-info">
+                    <span id="contractorName">Loading...</span>
+                    <button class="btn btn-secondary" onclick="logout()">Logout</button>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="stats-grid" id="statsGrid">
+                <!-- Stats will be loaded here -->
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('pending')">Pending Requests</button>
+                <button class="tab" onclick="showTab('scheduled')">Scheduled</button>
+                <button class="tab" onclick="showTab('completed')">Completed</button>
+                <button class="tab" onclick="showTab('profile')">Profile</button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div id="pendingTab" class="tab-content active">
+                <div id="pendingJobs"></div>
+            </div>
+
+            <div id="scheduledTab" class="tab-content">
+                <div id="scheduledJobs"></div>
+            </div>
+
+            <div id="completedTab" class="tab-content">
+                <div id="completedJobs"></div>
+            </div>
+
+            <div id="profileTab" class="tab-content">
+                <div class="job-card">
+                    <h3 style="margin-bottom: 20px;">Profile Settings</h3>
+                    <form id="profileForm">
+                        <div class="form-group">
+                            <label for="businessName">Business Name</label>
+                            <input type="text" id="businessName" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="tradeType">Trade Type</label>
+                            <select id="tradeType" required>
+                                <option value="plumber">Plumber</option>
+                                <option value="electrician">Electrician</option>
+                                <option value="handyman">Handyman</option>
+                                <option value="hvac">HVAC</option>
+                                <option value="roofer">Roofer</option>
+                                <option value="flooring">Flooring</option>
+                                <option value="appliance_repair">Appliance Repair</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="serviceAreaZip">Service Area (Zip Code)</label>
+                            <input type="text" id="serviceAreaZip" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="baseServiceFee">Base Service Fee ($)</label>
+                            <input type="number" id="baseServiceFee" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="hourlyRate">Hourly Rate ($)</label>
+                            <input type="number" id="hourlyRate" step="0.01" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Profile</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="jobModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('jobModal')">&times;</span>
+            <div id="jobModalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let sessionToken = null;
+        let contractorData = null;
+        let dashboardData = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check for existing session
+            const urlParams = new URLSearchParams(window.location.search);
+            const phone = urlParams.get('phone');
+            
+            if (phone) {
+                document.getElementById('phoneNumber').value = phone;
+            }
+
+            // Check session storage
+            const storedToken = localStorage.getItem('jobflowSessionToken');
+            if (storedToken) {
+                sessionToken = storedToken;
+                loadDashboard();
+            }
+        });
+
+        async function requestVerification() {
+            const phoneNumber = document.getElementById('phoneNumber').value;
+            if (!phoneNumber) {
+                showMessage('Please enter your phone number', 'error');
+                return;
+            }
+
+            try {
+                showMessage('Sending verification code...', 'info');
+                
+                const response = await fetch('/dashboard/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phoneNumber })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    sessionToken = result.sessionToken;
+                    document.getElementById('phoneStep').style.display = 'none';
+                    document.getElementById('verificationStep').style.display = 'block';
+                    showMessage('Verification code sent! Check your phone.', 'success');
+                } else {
+                    showMessage(result.error || 'Failed to send verification code', 'error');
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', 'error');
+                console.error('Login error:', error);
+            }
+        }
+
+        async function verifyCode() {
+            const verificationCode = document.getElementById('verificationCode').value;
+            if (!verificationCode || verificationCode.length !== 6) {
+                showMessage('Please enter a 6-digit verification code', 'error');
+                return;
+            }
+
+            try {
+                showMessage('Verifying code...', 'info');
+
+                const response = await fetch('/dashboard/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionToken, verificationCode })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    contractorData = result.contractor;
+                    localStorage.setItem('jobflowSessionToken', sessionToken);
+                    loadDashboard();
+                } else {
+                    showMessage(result.error || 'Invalid verification code', 'error');
+                }
+            } catch (error) {
+                showMessage('Network error. Please try again.', 'error');
+                console.error('Verification error:', error);
+            }
+        }
+
+        function backToPhone() {
+            document.getElementById('verificationStep').style.display = 'none';
+            document.getElementById('phoneStep').style.display = 'block';
+            showMessage('', 'clear');
+        }
+
+        async function loadDashboard() {
+            try {
+                document.getElementById('loginSection').style.display = 'none';
+                document.getElementById('dashboardSection').style.display = 'block';
+
+                const response = await fetch('/dashboard/data', {
+                    headers: { 'Authorization': `Bearer ${sessionToken}` }
+                });
+
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+
+                dashboardData = await response.json();
+                
+                // Update UI
+                document.getElementById('contractorName').textContent = dashboardData.contractor.businessName;
+                
+                updateStats();
+                loadJobs();
+                loadProfile();
+
+            } catch (error) {
+                console.error('Dashboard load error:', error);
+                showMessage('Failed to load dashboard data', 'error');
+            }
+        }
+
+        function updateStats() {
+            const stats = dashboardData.stats;
+            const statsGrid = document.getElementById('statsGrid');
+            
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <span class="stat-number">${stats.totalJobs}</span>
+                    <span class="stat-label">Total Jobs</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number">${stats.pendingRequests}</span>
+                    <span class="stat-label">Pending Requests</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number">${stats.scheduledJobs}</span>
+                    <span class="stat-label">Scheduled</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number">${stats.averageRating || 'N/A'}</span>
+                    <span class="stat-label">Avg Rating</span>
+                </div>
+            `;
+        }
+
+        function loadJobs() {
+            loadJobSection('pending', dashboardData.jobs.pending);
+            loadJobSection('scheduled', dashboardData.jobs.scheduled);
+            loadJobSection('completed', dashboardData.jobs.completed);
+        }
+
+        function loadJobSection(section, jobs) {
+            const container = document.getElementById(section + 'Jobs');
+            
+            if (jobs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No ${section} jobs</h3>
+                        <p>Jobs will appear here when available.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = jobs.map(job => createJobCard(job, section)).join('');
+        }
+
+        function createJobCard(job, section) {
+            const statusClass = `status-${job.status.replace('_', '-')}`;
+            const date = new Date(job.created_at).toLocaleDateString();
+            
+            let actions = '';
+            
+            if (section === 'pending') {
+                actions = `
+                    <div class="job-actions">
+                        <button class="btn btn-success" onclick="approveJob(${job.id})">Approve</button>
+                        <button class="btn btn-warning" onclick="customQuote(${job.id})">Custom Quote</button>
+                        <button class="btn btn-secondary" onclick="callCustomer('${job.customer_phone}')">Call Customer</button>
+                        <button class="btn btn-danger" onclick="passJob(${job.id})">Pass</button>
+                    </div>
+                `;
+            } else if (section === 'scheduled') {
+                actions = `
+                    <div class="job-actions">
+                        <button class="btn btn-primary" onclick="markInProgress(${job.id})">Mark In Progress</button>
+                        <button class="btn btn-secondary" onclick="rescheduleJob(${job.id})">Reschedule</button>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="job-card">
+                    <div class="job-header">
+                        <div>
+                            <div class="job-title">${job.problem_description}</div>
+                            <div class="job-meta">
+                                <span><strong>Customer:</strong> ${job.customer_phone}</span>
+                                <span><strong>Date:</strong> ${date}</span>
+                                <span><strong>Location:</strong> ${job.customer_address}</span>
+                                <span><strong>Quote:</strong> $${job.estimated_cost_min}-${job.estimated_cost_max}</span>
+                            </div>
+                        </div>
+                        <span class="status-badge ${statusClass}">${job.status.replace('_', ' ')}</span>
+                    </div>
+                    ${actions}
+                </div>
+            `;
+        }
+
+        function loadProfile() {
+            const contractor = dashboardData.contractor;
+            document.getElementById('businessName').value = contractor.businessName;
+            document.getElementById('tradeType').value = contractor.tradeType;
+            document.getElementById('serviceAreaZip').value = contractor.serviceArea;
+            // Note: These would need to be added to the API response
+            // document.getElementById('baseServiceFee').value = contractor.baseServiceFee;
+            // document.getElementById('hourlyRate').value = contractor.hourlyRate;
+        }
+
+        // Job Actions
+        async function approveJob(jobId) {
+            await updateJobStatus(jobId, 'approved');
+        }
+
+        async function markInProgress(jobId) {
+            await updateJobStatus(jobId, 'in_progress');
+        }
+
+        async function updateJobStatus(jobId, status) {
+            try {
+                const response = await fetch(`/dashboard/jobs/${jobId}/status`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionToken}`
+                    },
+                    body: JSON.stringify({ status })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                    loadDashboard(); // Refresh data
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Failed to update job status', 'error');
+                console.error('Status update error:', error);
+            }
+        }
+
+        function customQuote(jobId) {
+            const amount = prompt('Enter custom quote amount:');
+            if (amount && !isNaN(amount)) {
+                // This would integrate with the SMS system
+                showMessage(`Custom quote of $${amount} will be sent to customer`, 'info');
+            }
+        }
+
+        function callCustomer(phone) {
+            if (confirm(`Call customer at ${phone}?`)) {
+                window.location.href = `tel:${phone}`;
+            }
+        }
+
+        function passJob(jobId) {
+            if (confirm('Are you sure you want to pass on this job?')) {
+                updateJobStatus(jobId, 'contractor_passed');
+            }
+        }
+
+        // Navigation
+        function showTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+
+        // Profile Management
+        document.getElementById('profileForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                businessName: document.getElementById('businessName').value,
+                tradeType: document.getElementById('tradeType').value,
+                serviceAreaZip: document.getElementById('serviceAreaZip').value,
+                baseServiceFee: parseFloat(document.getElementById('baseServiceFee').value),
+                hourlyRate: parseFloat(document.getElementById('hourlyRate').value)
+            };
+
+            try {
+                const response = await fetch('/dashboard/profile', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${sessionToken}`
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                } else {
+                    showMessage(result.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Failed to update profile', 'error');
+                console.error('Profile update error:', error);
+            }
+        });
+
+        // Utility Functions
+        function showMessage(message, type) {
+            const messageDiv = document.getElementById('loginMessage');
+            if (type === 'clear') {
+                messageDiv.innerHTML = '';
+                return;
+            }
+            
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            messageDiv.innerHTML = `<div class="${className}">${message}</div>`;
+        }
+
+        function logout() {
+            localStorage.removeItem('jobflowSessionToken');
+            sessionToken = null;
+            contractorData = null;
+            dashboardData = null;
+            
+            document.getElementById('dashboardSection').style.display = 'none';
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('verificationStep').style.display = 'none';
+            document.getElementById('phoneStep').style.display = 'block';
+            
+            showMessage('', 'clear');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+
+        // Auto-refresh dashboard every 5 minutes
+        setInterval(() => {
+            if (sessionToken && document.getElementById('dashboardSection').style.display !== 'none') {
+                loadDashboard();
+            }
+        }, 300000); // 5 minutes
+    </script>
+</body>
+</html>
