@@ -232,28 +232,19 @@ class AIConversationEngine {
         const urgencyMap = { '1': 'low', '2': 'medium', '3': 'high', '4': 'emergency' };
         context.urgency_level = urgencyMap[message.trim()] || 'medium';
         
-        db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { ...context, step: 'address' });
-        return "What's your address or zip code? (I need this to find contractors near you)";
-
-      case 'address':
-        const zipMatch = message.match(/\b\d{5}\b/);
-        if (!zipMatch) {
-          return "I need at least your zip code to find contractors near you. What's your zip code?";
-        }
+        // New model: each number belongs to one contractor, no need to ask for zip
+        // Get the default contractor for this number (or first active contractor)
+        const defaultContractor = db.getDefaultContractor ? db.getDefaultContractor() : null;
+        const allContractors = db.getAllContractors();
+        const selectedContractor = defaultContractor || (allContractors.length > 0 ? allContractors[0] : null);
         
-        context.customer_address = message;
-        context.customer_zip = zipMatch[0];
-        
-        // Find available contractors
-        const contractors = db.findAvailableContractors(context.customer_zip, context.service_category);
-        
-        if (contractors.length === 0) {
+        if (!selectedContractor) {
           db.updateConversationState(phoneNumber, 'IDLE', {});
-          return "Sorry, I don't have any contractors available in your area right now. Please try again later or expand your search area.";
+          return "Sorry, this service isn't set up yet. Please try again later.";
         }
-
-        // Generate quote and create job
-        const selectedContractor = contractors[0]; // For now, select first available
+        
+        context.customer_address = selectedContractor.service_area_zip;
+        context.customer_zip = selectedContractor.service_area_zip;
         const { minCost, maxCost } = await this.generateQuote(context, selectedContractor);
         
         // Create job record
