@@ -52,6 +52,17 @@ router.get('/stats', (req, res) => {
   }
 });
 
+// Add contractor
+router.post('/contractors', (req, res) => {
+  try {
+    const result = db.createContractor(req.body);
+    res.json({ success: true, message: 'Contractor added', id: result });
+  } catch (error) {
+    console.error('Error adding contractor:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Search contractors
 router.get('/contractors/search', (req, res) => {
   try {
