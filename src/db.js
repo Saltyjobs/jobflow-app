@@ -147,6 +147,15 @@ function createContractor(data) {
   );
 }
 
+function getContractorById(id) {
+  const c = get('SELECT * FROM contractors WHERE id = ?', [id]);
+  if (c) {
+    c.services_offered = JSON.parse(c.services_offered || '[]');
+    c.available_hours = JSON.parse(c.available_hours || '{}');
+  }
+  return c;
+}
+
 function getContractorByPhone(phone) {
   const c = get('SELECT * FROM contractors WHERE phone_number = ?', [phone]);
   if (c) {
@@ -283,7 +292,7 @@ const stmts = {
 
 module.exports = {
   initDb,
-  createContractor, getContractorByPhone, findAvailableContractors, getAllContractors,
+  createContractor, getContractorById, getContractorByPhone, findAvailableContractors, getAllContractors,
   createCustomer, getCustomerByPhone,
   createJob, getJobById, getJobByUuid, updateJobStatus, assignJobToContractor, updateJobQuote, scheduleJob, getJobsByContractor,
   getOrCreateConversation, updateConversationState,

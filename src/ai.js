@@ -267,7 +267,7 @@ class AIConversationEngine {
     if (response === 'YES' || response === 'Y') {
       // Customer approved the quote
       const job = db.getJobById(context.job_id);
-      const contractor = db.getContractorByPhone(db.stmts.getContractorByPhone.get(context.contractor_id)?.phone_number);
+      const contractor = db.getContractorById(context.contractor_id);
       
       if (job && contractor) {
         db.assignJobToContractor(context.job_id, context.contractor_id);
