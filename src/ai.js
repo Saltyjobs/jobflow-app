@@ -81,30 +81,37 @@ class AIConversationEngine {
       return "Hi! I'm JobFlow, your AI assistant for home service needs. What can I help you with today? Please describe the problem you're having.";
     }
     
-    // They already described their problem - use AI to acknowledge it personally
+    // They already described their problem - acknowledge and ask a smart follow-up
+    const serviceCategory = await this.categorizeService(message.trim());
+    
     db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { 
-      step: 'urgency',
+      step: 'details',
       customer_id: customer.id,
-      problem_description: message.trim()
+      problem_description: message.trim(),
+      service_category: serviceCategory
     });
     
-    // Generate a personalized acknowledgment
-    let ack;
+    // Generate a personalized acknowledgment + diagnostic question
+    let response;
     try {
       const ackResponse = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        max_tokens: 60,
+        max_tokens: 100,
         messages: [
-          { role: 'system', content: 'You are a friendly home service assistant. The customer just described their problem. Write a SHORT (1 sentence, max 15 words) empathetic acknowledgment that shows you understood their specific issue. No questions. No offers to help. Just acknowledge.' },
+          { role: 'system', content: `You are a friendly home service assistant helping a customer who needs a ${serviceCategory}. They just described their problem. Write TWO things in one message:
+1. A SHORT empathetic acknowledgment (1 sentence, max 15 words) showing you understood their specific issue
+2. Then ask 1-2 quick follow-up questions to better understand the job scope (e.g., how long has this been happening? is there visible damage? what type/brand is it? have you tried anything?)
+
+Keep it conversational and brief. No bullet points. Just natural text.` },
           { role: 'user', content: message.trim() }
         ]
       });
-      ack = ackResponse.choices[0].message.content.trim();
+      response = ackResponse.choices[0].message.content.trim();
     } catch (e) {
-      ack = `Got it — sounds like you need help with that.`;
+      response = `Got it — sounds like you need help with that. Can you tell me a bit more? How long has this been going on, and have you noticed any other issues?`;
     }
     
-    return `${ack}\n\nHow urgent is this? Reply with:\n1 - Not urgent, can wait a few days\n2 - Soon, within 1-2 days\n3 - Today if possible\n4 - Emergency, ASAP`;
+    return response;
   }
 
   async handleContractorMessage(phoneNumber, message, contractor) {
@@ -213,6 +220,13 @@ class AIConversationEngine {
     const step = context.step;
 
     switch (step) {
+      case 'details':
+        // Customer answered our follow-up question — now we have more context
+        context.additional_details = message;
+        context.problem_description = (context.problem_description || '') + ' | Details: ' + message;
+        db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { ...context, step: 'urgency' });
+        return "Thanks for the details! That helps a lot.\n\nHow urgent is this? Reply with:\n1 - Not urgent, can wait a few days\n2 - Soon, within 1-2 days\n3 - Today if possible\n4 - Emergency, ASAP";
+
       case 'problem_description':
         context.problem_description = message;
         context.service_category = await this.categorizeService(message);
