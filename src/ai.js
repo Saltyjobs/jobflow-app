@@ -81,14 +81,30 @@ class AIConversationEngine {
       return "Hi! I'm JobFlow, your AI assistant for home service needs. What can I help you with today? Please describe the problem you're having.";
     }
     
-    // They already described their problem - skip ahead to urgency
+    // They already described their problem - use AI to acknowledge it personally
     db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { 
       step: 'urgency',
       customer_id: customer.id,
       problem_description: message.trim()
     });
     
-    return `Got it — "${message.trim()}"\n\nHow urgent is this? Reply with:\n1 - Not urgent, can wait a few days\n2 - Soon, within 1-2 days\n3 - Today if possible\n4 - Emergency, ASAP`;
+    // Generate a personalized acknowledgment
+    let ack;
+    try {
+      const ackResponse = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 60,
+        messages: [
+          { role: 'system', content: 'You are a friendly home service assistant. The customer just described their problem. Write a SHORT (1 sentence, max 15 words) empathetic acknowledgment that shows you understood their specific issue. No questions. No offers to help. Just acknowledge.' },
+          { role: 'user', content: message.trim() }
+        ]
+      });
+      ack = ackResponse.choices[0].message.content.trim();
+    } catch (e) {
+      ack = `Got it — sounds like you need help with that.`;
+    }
+    
+    return `${ack}\n\nHow urgent is this? Reply with:\n1 - Not urgent, can wait a few days\n2 - Soon, within 1-2 days\n3 - Today if possible\n4 - Emergency, ASAP`;
   }
 
   async handleContractorMessage(phoneNumber, message, contractor) {
