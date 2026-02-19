@@ -16,7 +16,9 @@ const validateTwilioSignature = (req, res, next) => {
 
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const twilioSignature = req.headers['x-twilio-signature'];
-  const url = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+  // Railway/Render proxies use X-Forwarded-Proto for the real protocol
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  const url = `${protocol}://${req.get('host')}${req.originalUrl}`;
   
   const isValid = twilio.validateRequest(authToken, twilioSignature, url, req.body);
   
@@ -135,7 +137,7 @@ async function handleContractorJobResponse(phoneNumber, response, contractor) {
         db.updateJobStatus(pendingJob.id, 'approved');
         
         // Notify customer
-        const customer = db.db.prepare('SELECT * FROM customers WHERE id = ?').get(pendingJob.customer_id);
+        const customer = db.queryGet('SELECT * FROM customers WHERE id = ?', [pendingJob.customer_id]);
         if (customer) {
           await sms.sendJobApprovalNotification(
             customer.phone_number, 
@@ -149,15 +151,15 @@ async function handleContractorJobResponse(phoneNumber, response, contractor) {
 
       case 'call_customer':
         // Contractor will call customer
-        const customerForCall = db.db.prepare('SELECT * FROM customers WHERE id = ?').get(pendingJob.customer_id);
+        const customerForCall = db.queryGet('SELECT * FROM customers WHERE id = ?', [pendingJob.customer_id]);
         await sms.sendSMS(phoneNumber, `📞 Customer contact info:\n${customerForCall?.phone_number}\n\nPlease call them to discuss the job. Reply with A after you agree on details.`);
         break;
 
       case 'custom_quote':
         // Contractor provided custom quote
-        db.stmts.updateJobQuote.run(response.amount, pendingJob.id);
+        db.updateJobQuote(response.amount, pendingJob.id);
         
-        const customerForQuote = db.db.prepare('SELECT * FROM customers WHERE id = ?').get(pendingJob.customer_id);
+        const customerForQuote = db.queryGet('SELECT * FROM customers WHERE id = ?', [pendingJob.customer_id]);
         if (customerForQuote) {
           await sms.sendCustomQuoteToCustomer(
             customerForQuote.phone_number,
@@ -174,7 +176,7 @@ async function handleContractorJobResponse(phoneNumber, response, contractor) {
         // Contractor passed on the job
         db.updateJobStatus(pendingJob.id, 'contractor_passed');
         
-        const customerForRejection = db.db.prepare('SELECT * FROM customers WHERE id = ?').get(pendingJob.customer_id);
+        const customerForRejection = db.queryGet('SELECT * FROM customers WHERE id = ?', [pendingJob.customer_id]);
         if (customerForRejection) {
           await sms.sendJobRejectionNotification(customerForRejection.phone_number, "Contractor unavailable");
         }
@@ -207,7 +209,7 @@ async function handleInvoiceCommand(phoneNumber, response, contractor) {
       );
 
       if (completedJob) {
-        const customer = db.db.prepare('SELECT * FROM customers WHERE id = ?').get(completedJob.customer_id);
+        const customer = db.queryGet('SELECT * FROM customers WHERE id = ?', [completedJob.customer_id]);
         
         if (customer) {
           await sms.sendInvoiceToCustomer(
@@ -218,7 +220,7 @@ async function handleInvoiceCommand(phoneNumber, response, contractor) {
           );
 
           // Mark invoice as sent
-          db.db.prepare('UPDATE jobs SET invoice_sent = 1 WHERE id = ?').run(completedJob.id);
+          db.queryRun('UPDATE jobs SET invoice_sent = 1 WHERE id = ?', [completedJob.id]);
           
           await sms.sendSMS(phoneNumber, `📧 Invoice sent to customer for $${response.amount}`);
         }
@@ -253,12 +255,11 @@ async function findAlternativeContractor(job) {
         
         // Generate new quote
         const newQuote = bestMatch.quote;
-        db.db.prepare('UPDATE jobs SET estimated_cost_min = ?, estimated_cost_max = ? WHERE id = ?')
-          .run(newQuote.minCost, newQuote.maxCost, job.id);
+        db.queryRun('UPDATE jobs SET estimated_cost_min = ?, estimated_cost_max = ? WHERE id = ?', [newQuote.minCost, newQuote.maxCost, job.id]);
 
         // Notify new contractor
-        const contractorDetails = db.db.prepare('SELECT * FROM contractors WHERE id = ?').get(bestMatch.contractor.id);
-        const customer = db.db.prepare('SELECT * FROM customers WHERE id = ?').get(job.customer_id);
+        const contractorDetails = db.queryGet('SELECT * FROM contractors WHERE id = ?', [bestMatch.contractor.id]);
+        const customer = db.queryGet('SELECT * FROM customers WHERE id = ?', [job.customer_id]);
         
         if (contractorDetails && customer) {
           await sms.sendContractorNotification(contractorDetails.phone_number, {
@@ -279,7 +280,7 @@ async function findAlternativeContractor(job) {
       }
     } else {
       // No other contractors available
-      const customer = db.db.prepare('SELECT * FROM customers WHERE id = ?').get(job.customer_id);
+      const customer = db.queryGet('SELECT * FROM customers WHERE id = ?', [job.customer_id]);
       if (customer) {
         await sms.sendSMS(customer.phone_number, 
           "Sorry, no other contractors are available in your area right now. You can try again later or expand your search area."
@@ -320,19 +321,16 @@ router.post('/handle-rating', async (req, res) => {
       // Find the customer's most recent completed job
       const customer = db.getCustomerByPhone(phoneNumber);
       if (customer) {
-        const jobs = db.db.prepare(`
-          SELECT * FROM jobs 
-          WHERE customer_id = ? AND status = 'completed' 
-          ORDER BY completion_date DESC 
-          LIMIT 1
-        `).all(customer.id);
+        const jobs = db.queryAll(
+          `SELECT * FROM jobs WHERE customer_id = ? AND status = 'completed' ORDER BY created_at DESC LIMIT 1`,
+          [customer.id]
+        );
 
         if (jobs.length > 0) {
           const job = jobs[0];
           
           // Save rating and feedback
-          db.db.prepare('UPDATE jobs SET customer_rating = ?, customer_feedback = ? WHERE id = ?')
-            .run(ratingData.rating, ratingData.feedback, job.id);
+          db.queryRun('UPDATE jobs SET customer_rating = ?, customer_feedback = ? WHERE id = ?', [ratingData.rating, ratingData.feedback, job.id]);
 
           let responseMessage = `Thank you for rating your service experience: ${ratingData.rating}/5 stars! ⭐`;
           
