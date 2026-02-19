@@ -25,6 +25,24 @@ async function start() {
   await db.initDb();
   console.log('Database ready');
 
+  // Seed default contractor if none exist
+  const contractors = db.getAllContractors ? db.getAllContractors() : [];
+  if (contractors.length === 0) {
+    db.createContractor({
+      phone_number: '+19175756921',
+      business_name: 'Salty Jobs',
+      trade_type: 'plumber',
+      service_area_zip: '07704',
+      service_radius: 25,
+      services_offered: ['leaky faucet', 'clogged drain', 'pipe repair', 'water heater', 'bathroom remodel', 'toilet repair', 'sump pump'],
+      base_service_fee: 100,
+      hourly_rate: 200,
+      emergency_markup: 0.5,
+      available_hours: {monday:'8-17',tuesday:'8-17',wednesday:'8-17',thursday:'8-17',friday:'8-17',saturday:'9-14'}
+    });
+    console.log('Seeded contractor: Salty Jobs');
+  }
+
   // Now load routes (they require db which is now initialized)
   const webhookRoutes = require('./routes/webhook');
   const dashboardRoutes = require('./routes/dashboard');
