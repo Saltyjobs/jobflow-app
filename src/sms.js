@@ -18,10 +18,15 @@ class SMSService {
         return { success: false, error: 'Twilio not configured' };
       }
 
+      // Use WhatsApp sandbox if configured, otherwise regular SMS
+      const useWhatsApp = process.env.TWILIO_WHATSAPP_FROM;
+      const from = useWhatsApp || this.fromNumber;
+      const to = useWhatsApp ? `whatsapp:${toNumber}` : toNumber;
+      
       const result = await this.client.messages.create({
         body: message,
-        from: this.fromNumber,
-        to: toNumber
+        from: useWhatsApp ? `whatsapp:${useWhatsApp}` : from,
+        to: to
       });
 
       // Save outbound message to database

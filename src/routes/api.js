@@ -52,6 +52,59 @@ router.get('/stats', (req, res) => {
   }
 });
 
+// Contractor responds to a job (A=approve, X=pass, Q $amt=custom quote)
+router.post('/jobs/:jobId/respond', async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const { action, amount, scheduled_date, scheduled_time } = req.body;
+    const sms = require('../sms');
+    
+    const job = db.getJobById(jobId);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    
+    const customer = db.queryGet('SELECT * FROM customers WHERE id = ?', [job.customer_id]);
+    const contractor = db.getContractorById(job.contractor_id);
+    
+    if (action === 'A' || action === 'approve') {
+      db.updateJobStatus(jobId, 'approved');
+      
+      // If schedule provided, set it
+      if (scheduled_date) {
+        db.queryRun('UPDATE jobs SET scheduled_date = ?, scheduled_time = ?, status = ? WHERE id = ?', 
+          [scheduled_date, scheduled_time || 'TBD', 'scheduled', jobId]);
+      }
+      
+      const scheduleInfo = scheduled_date ? `\n📅 Date: ${scheduled_date}\n⏰ Time: ${scheduled_time || 'TBD'}` : '\nThey will contact you shortly to schedule.';
+      
+      // Notify customer via WhatsApp/SMS
+      const customerMsg = `✅ Great news! ${contractor.business_name} has accepted your job!\n${scheduleInfo}\n\nContractor: ${contractor.business_name}\nEstimate: $${job.estimated_cost_min}-$${job.estimated_cost_max}\n\nThey'll reach out to confirm details. Reply CANCEL anytime to cancel.`;
+      
+      try {
+        await sms.sendSMS(customer.phone_number, customerMsg);
+      } catch (e) { console.error('Failed to notify customer:', e.message); }
+      
+      res.json({ success: true, message: 'Job approved, customer notified', customerMsg });
+    } else if (action === 'X' || action === 'pass') {
+      db.updateJobStatus(jobId, 'cancelled');
+      res.json({ success: true, message: 'Job passed' });
+    } else if (action === 'Q' || action === 'quote') {
+      db.queryRun('UPDATE jobs SET final_quote = ? WHERE id = ?', [amount, jobId]);
+      
+      const customerMsg = `💰 ${contractor.business_name} sent you a custom quote: $${amount}\n\nReply YES to accept or NO to decline.`;
+      try {
+        await sms.sendSMS(customer.phone_number, customerMsg);
+      } catch (e) { console.error('Failed to notify customer:', e.message); }
+      
+      res.json({ success: true, message: 'Custom quote sent', customerMsg });
+    } else {
+      res.status(400).json({ error: 'Invalid action. Use: approve, pass, or quote' });
+    }
+  } catch (error) {
+    console.error('Error responding to job:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get recent jobs (for contractor notifications)
 router.get('/jobs/recent', (req, res) => {
   try {
