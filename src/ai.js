@@ -68,13 +68,27 @@ class AIConversationEngine {
       customer.id = customerId;
     }
 
-    // Start customer intake process
+    // Check if the first message already describes a problem (not just "hi" or "hello")
+    const greetings = ['HI', 'HELLO', 'HEY', 'SUP', 'YO', 'HELP', 'START'];
+    const isJustGreeting = greetings.includes(message.trim().toUpperCase()) || message.trim().length < 4;
+    
+    if (isJustGreeting) {
+      // Generic greeting - ask what they need
+      db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { 
+        step: 'problem_description',
+        customer_id: customer.id 
+      });
+      return "Hi! I'm JobFlow, your AI assistant for home service needs. What can I help you with today? Please describe the problem you're having.";
+    }
+    
+    // They already described their problem - skip ahead to urgency
     db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { 
-      step: 'problem_description',
-      customer_id: customer.id 
+      step: 'urgency',
+      customer_id: customer.id,
+      problem_description: message.trim()
     });
-
-    return "Hi! I'm JobFlow, your AI assistant for home service needs. What can I help you with today? Please describe the problem you're having.";
+    
+    return `Got it — "${message.trim()}"\n\nHow urgent is this? Reply with:\n1 - Not urgent, can wait a few days\n2 - Soon, within 1-2 days\n3 - Today if possible\n4 - Emergency, ASAP`;
   }
 
   async handleContractorMessage(phoneNumber, message, contractor) {
