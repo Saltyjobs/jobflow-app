@@ -20,12 +20,23 @@ class SMSService {
 
       // Use WhatsApp sandbox if configured, otherwise regular SMS
       const useWhatsApp = process.env.TWILIO_WHATSAPP_FROM;
-      const from = useWhatsApp || this.fromNumber;
-      const to = useWhatsApp ? `whatsapp:${toNumber}` : toNumber;
+      let from, to;
+      
+      if (toNumber.startsWith('whatsapp:')) {
+        // Already a WhatsApp number — use as-is
+        to = toNumber;
+        from = `whatsapp:${useWhatsApp || this.fromNumber}`;
+      } else if (useWhatsApp) {
+        to = `whatsapp:${toNumber}`;
+        from = `whatsapp:${useWhatsApp}`;
+      } else {
+        to = toNumber;
+        from = this.fromNumber;
+      }
       
       const result = await this.client.messages.create({
         body: message,
-        from: useWhatsApp ? `whatsapp:${useWhatsApp}` : from,
+        from: from,
         to: to
       });
 
