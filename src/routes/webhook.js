@@ -47,12 +47,12 @@ router.post('/sms', validateTwilioSignature, async (req, res) => {
     const aiResponse = await ai.processMessage(fromNumber, messageBody);
 
     if (aiResponse && aiResponse.trim()) {
-      // Send response via Twilio
+      // Send response via TwiML (Twilio handles delivery)
       const twiml = new twilio.twiml.MessagingResponse();
       twiml.message(aiResponse);
 
-      // Also send via SMS service to save to database
-      await sms.sendSMS(fromNumber, aiResponse);
+      // Save outbound message to database (don't send again via API)
+      db.saveMessage(toNumber, fromNumber, aiResponse, 'outbound', null);
 
       res.writeHead(200, { 'Content-Type': 'text/xml' });
       res.end(twiml.toString());
