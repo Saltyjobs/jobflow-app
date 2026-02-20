@@ -105,6 +105,19 @@ async function initDb() {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS contractor_calendar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      contractor_id INTEGER NOT NULL,
+      google_email TEXT,
+      access_token TEXT,
+      refresh_token TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (contractor_id) REFERENCES contractors(id)
+    )
+  `);
+
   saveDb();
   console.log('Database initialized successfully');
   return db;
@@ -264,6 +277,25 @@ function getMessagesByPhone(phone) {
   return all('SELECT * FROM messages WHERE from_number = ? OR to_number = ? ORDER BY created_at DESC', [phone, phone]);
 }
 
+// ---- Calendar token methods ----
+function saveCalendarTokens(data) {
+  return run(
+    'INSERT INTO contractor_calendar (contractor_id, google_email, access_token, refresh_token) VALUES (?, ?, ?, ?)',
+    [data.contractor_id, data.google_email, data.access_token, data.refresh_token]
+  );
+}
+
+function getCalendarTokens(contractorId) {
+  return get('SELECT * FROM contractor_calendar WHERE contractor_id = ?', [contractorId]);
+}
+
+function updateCalendarTokens(contractorId, data) {
+  run(
+    'UPDATE contractor_calendar SET google_email = ?, access_token = ?, refresh_token = ?, updated_at = CURRENT_TIMESTAMP WHERE contractor_id = ?',
+    [data.google_email, data.access_token, data.refresh_token, contractorId]
+  );
+}
+
 // Raw query helpers for routes that need them
 function queryGet(sql, params = []) { return get(sql, params); }
 function queryAll(sql, params = []) { return all(sql, params); }
@@ -295,6 +327,7 @@ module.exports = {
   createContractor, getContractorById, getContractorByPhone, findAvailableContractors, getAllContractors,
   createCustomer, getCustomerByPhone,
   createJob, getJobById, getJobByUuid, updateJobStatus, assignJobToContractor, updateJobQuote, scheduleJob, getJobsByContractor,
+  saveCalendarTokens, getCalendarTokens, updateCalendarTokens,
   getOrCreateConversation, updateConversationState,
   saveMessage, getMessagesByPhone,
   queryGet, queryAll, queryRun,

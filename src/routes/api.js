@@ -1,8 +1,83 @@
 const express = require('express');
 const db = require('../db');
 const quoting = require('../quoting');
+const calendar = require('../calendar');
 
 const router = express.Router();
+
+// ---- Google Calendar OAuth routes ----
+router.get('/calendar/auth/:contractorId', (req, res) => {
+  try {
+    const { contractorId } = req.params;
+    const contractor = db.getContractorById(parseInt(contractorId));
+    if (!contractor) return res.status(404).json({ error: 'Contractor not found' });
+
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      return res.status(500).json({ error: 'Google Calendar not configured' });
+    }
+
+    const url = calendar.getAuthUrl(contractorId);
+    res.redirect(url);
+  } catch (error) {
+    console.error('Calendar auth error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/calendar/callback', async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    if (!code || !state) return res.status(400).send('Missing code or state');
+
+    const contractorId = parseInt(state);
+    const result = await calendar.handleCallback(code, contractorId);
+    const contractor = db.getContractorById(contractorId);
+
+    res.send(`
+      <!DOCTYPE html><html><body style="font-family:Arial;text-align:center;padding:60px">
+        <h1>✅ Calendar Connected!</h1>
+        <p>${contractor?.business_name || 'Contractor'} is now linked to <strong>${result.email}</strong></p>
+        <p>Jobs you approve will automatically appear on your Google Calendar.</p>
+      </body></html>
+    `);
+  } catch (error) {
+    console.error('Calendar callback error:', error);
+    res.status(500).send(`
+      <!DOCTYPE html><html><body style="font-family:Arial;text-align:center;padding:60px">
+        <h1>❌ Connection Failed</h1>
+        <p>${error.message}</p>
+      </body></html>
+    `);
+  }
+});
+
+router.get('/calendar/status/:contractorId', (req, res) => {
+  try {
+    const tokens = db.getCalendarTokens(parseInt(req.params.contractorId));
+    res.json({
+      connected: !!tokens,
+      email: tokens?.google_email || null,
+      connectedAt: tokens?.created_at || null,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---- Smart Scheduling ----
+router.get('/jobs/:jobId/suggest-times', async (req, res) => {
+  try {
+    const job = db.getJobById(parseInt(req.params.jobId));
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    if (!job.contractor_id) return res.status(400).json({ error: 'No contractor assigned' });
+
+    const slots = await calendar.getAvailableSlots(job.contractor_id, 2, job.customer_zip);
+    res.json({ slots, jobId: job.id });
+  } catch (error) {
+    console.error('Suggest times error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Get system statistics (for admin/monitoring)
 router.get('/stats', (req, res) => {
@@ -83,7 +158,16 @@ router.post('/jobs/:jobId/respond', async (req, res) => {
         await sms.sendSMS(customer.phone_number, customerMsg);
       } catch (e) { console.error('Failed to notify customer:', e.message); }
       
-      res.json({ success: true, message: 'Job approved, customer notified', customerMsg });
+      // Auto-create Google Calendar event if connected and scheduled
+      let calendarEvent = null;
+      if (scheduled_date) {
+        try {
+          const updatedJob = db.getJobById(jobId);
+          calendarEvent = await calendar.createCalendarEvent(job.contractor_id, updatedJob, customer);
+        } catch (e) { console.error('Failed to create calendar event:', e.message); }
+      }
+      
+      res.json({ success: true, message: 'Job approved, customer notified', customerMsg, calendarEvent: calendarEvent?.htmlLink || null });
     } else if (action === 'X' || action === 'pass') {
       db.updateJobStatus(jobId, 'cancelled');
       res.json({ success: true, message: 'Job passed' });
