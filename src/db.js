@@ -106,6 +106,16 @@ async function initDb() {
   `);
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone_number TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS contractor_calendar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       contractor_id INTEGER NOT NULL,
@@ -277,6 +287,28 @@ function getMessagesByPhone(phone) {
   return all('SELECT * FROM messages WHERE from_number = ? OR to_number = ? ORDER BY created_at DESC', [phone, phone]);
 }
 
+// ---- Chat message methods (for AI conversation history) ----
+function saveChatMessage(phone, role, content) {
+  return run(
+    'INSERT INTO chat_messages (phone_number, role, content) VALUES (?, ?, ?)',
+    [phone, role, content]
+  );
+}
+
+function getRecentChatMessages(phone, limit = 20) {
+  return all(
+    'SELECT role, content, created_at FROM chat_messages WHERE phone_number = ? ORDER BY created_at DESC LIMIT ?',
+    [phone, limit]
+  ).reverse();
+}
+
+function getCustomerJobs(customerId) {
+  return all(
+    'SELECT * FROM jobs WHERE customer_id = ? ORDER BY created_at DESC',
+    [customerId]
+  );
+}
+
 // ---- Calendar token methods ----
 function saveCalendarTokens(data) {
   return run(
@@ -330,6 +362,7 @@ module.exports = {
   saveCalendarTokens, getCalendarTokens, updateCalendarTokens,
   getOrCreateConversation, updateConversationState,
   saveMessage, getMessagesByPhone,
+  saveChatMessage, getRecentChatMessages, getCustomerJobs,
   queryGet, queryAll, queryRun,
   db: dbProxy,
   stmts,

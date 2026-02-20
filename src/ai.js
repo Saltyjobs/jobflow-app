@@ -16,22 +16,26 @@ class AIConversationEngine {
 
       console.log(`Processing message from ${phoneNumber}, state: ${state}, message: ${incomingMessage}`);
 
+      // CANCEL resets everything
+      if (incomingMessage.trim().toUpperCase() === 'CANCEL') {
+        db.updateConversationState(phoneNumber, 'IDLE', {});
+        return "No problem — conversation reset. Text me anytime you need help!";
+      }
+
       // Route to appropriate handler based on conversation state
       switch (state) {
-        case 'IDLE':
-          return await this.handleIdleState(phoneNumber, incomingMessage, context);
         case 'CONTRACTOR_ONBOARDING':
           return await this.handleContractorOnboarding(phoneNumber, incomingMessage, context);
-        case 'CUSTOMER_INTAKE':
-          return await this.handleCustomerIntake(phoneNumber, incomingMessage, context);
         case 'AWAITING_QUOTE_APPROVAL':
           return await this.handleQuoteApproval(phoneNumber, incomingMessage, context);
         case 'AWAITING_CONTRACTOR_RESPONSE':
           return await this.handleContractorResponse(phoneNumber, incomingMessage, context);
         case 'JOB_SCHEDULED':
           return await this.handleScheduledJobMessages(phoneNumber, incomingMessage, context);
+        case 'IDLE':
+        case 'CUSTOMER_INTAKE':
         default:
-          return await this.handleIdleState(phoneNumber, incomingMessage, context);
+          return await this.handleSmartConversation(phoneNumber, incomingMessage, context);
       }
     } catch (error) {
       console.error('Error processing message:', error.message, error.stack);
@@ -39,90 +43,188 @@ class AIConversationEngine {
     }
   }
 
-  async handleIdleState(phoneNumber, message, context) {
+  // ---- Smart AI Conversation (replaces handleIdleState + handleCustomerIntake) ----
+
+  async handleSmartConversation(phoneNumber, message, context) {
     const normalizedMessage = message.toUpperCase().trim();
 
-    // Check if it's contractor setup
+    // Contractor setup flow
     if (normalizedMessage === 'SETUP' || normalizedMessage.includes('SETUP')) {
-      // Check if contractor already exists
       const existingContractor = db.getContractorByPhone(phoneNumber);
       if (existingContractor) {
         return "You're already set up as a contractor! Text DASHBOARD for login link.";
       }
-
-      // Start contractor onboarding
       db.updateConversationState(phoneNumber, 'CONTRACTOR_ONBOARDING', { step: 'business_name' });
       return "Welcome to JobFlow! Let's get your business set up.\n\nWhat's your business name?";
     }
 
-    // Check if it's an existing contractor
+    // Existing contractor commands
     const contractor = db.getContractorByPhone(phoneNumber);
     if (contractor) {
       return await this.handleContractorMessage(phoneNumber, message, contractor);
     }
 
-    // Otherwise, treat as customer inquiry
-    const customer = db.getCustomerByPhone(phoneNumber) || { phone_number: phoneNumber };
-    if (!customer.id) {
-      const customerId = db.createCustomer(customer);
-      customer.id = customerId;
+    // ---- Customer AI conversation ----
+
+    // Ensure customer exists
+    let customer = db.getCustomerByPhone(phoneNumber);
+    if (!customer) {
+      const customerId = db.createCustomer({ phone_number: phoneNumber });
+      customer = { id: customerId, phone_number: phoneNumber };
     }
 
-    // Check if the first message already describes a problem (not just "hi" or "hello")
-    const greetings = ['HI', 'HELLO', 'HEY', 'SUP', 'YO', 'HELP', 'START'];
-    const isJustGreeting = greetings.includes(message.trim().toUpperCase()) || message.trim().length < 4;
-    
-    if (isJustGreeting) {
-      // Generic greeting - ask what they need
-      db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { 
-        step: 'problem_description',
-        customer_id: customer.id 
-      });
-      return "Hi! I'm JobFlow, your AI assistant for home service needs. What can I help you with today? Please describe the problem you're having.";
+    // Save inbound message
+    db.saveChatMessage(phoneNumber, 'customer', message);
+
+    // Load conversation history
+    const recentMessages = db.getRecentChatMessages(phoneNumber, 20);
+
+    // Check for previous jobs
+    const previousJobs = db.getCustomerJobs(customer.id);
+
+    // Find contractor for system prompt context
+    const allContractors = db.getAllContractors();
+    const selectedContractor = allContractors.length > 0 ? allContractors[0] : null;
+
+    if (!selectedContractor) {
+      return "Sorry, this service isn't set up yet. Please try again later.";
     }
-    
-    // They already described their problem - acknowledge and ask a smart follow-up
-    const serviceCategory = await this.categorizeService(message.trim());
-    
-    db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { 
-      step: 'details',
-      customer_id: customer.id,
-      problem_description: message.trim(),
-      service_category: serviceCategory
-    });
-    
-    // Generate a personalized acknowledgment + diagnostic question
-    let response;
+
+    // Build system prompt
+    let systemPrompt = `You are a friendly AI receptionist for ${selectedContractor.business_name}, a ${selectedContractor.trade_type} business.
+
+Your job is to understand the customer's problem thoroughly before generating a quote.
+
+Information you need to gather (naturally, not as a checklist):
+- What's the problem? (specific details)
+- How long has it been going on?
+- Any related symptoms or damage?
+- Have they tried anything to fix it?
+- How urgent is it?
+- Their location/zip code (if not already known)
+
+When you have enough information to understand the scope of work, respond with your normal conversational message AND include this tag at the very end:
+<!--READY_TO_QUOTE:{"problem":"concise problem summary","category":"plumbing|electrical|HVAC|general_handyman|appliance_repair|cleaning|landscaping|pest_control|roofing|flooring","urgency":"low|medium|high|emergency","details":"key details for quoting"}-->
+
+Otherwise, just have a natural conversation. Be empathetic, professional, and thorough.
+Don't ask all questions at once — 1-2 per message max.
+Keep responses concise (2-4 sentences typically).
+If they mention a previous job, ask if this is related.`;
+
+    // Add job history context
+    if (previousJobs.length > 0) {
+      const jobSummaries = previousJobs.slice(0, 5).map(j =>
+        `- ${j.service_category || 'service'}: "${j.problem_description}" (${j.status}, ${j.created_at})`
+      ).join('\n');
+      systemPrompt += `\n\nThis is a returning customer. Their previous jobs:\n${jobSummaries}\nIf relevant, ask if the new issue is related to a previous one.`;
+    }
+
+    // Build messages array
+    const aiMessages = [{ role: 'system', content: systemPrompt }];
+    for (const msg of recentMessages) {
+      aiMessages.push({
+        role: msg.role === 'customer' ? 'user' : 'assistant',
+        content: msg.content
+      });
+    }
+
+    // Call OpenAI
+    let aiResponse;
     try {
-      const ackResponse = await this.openai.chat.completions.create({
+      const completion = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        max_tokens: 100,
-        messages: [
-          { role: 'system', content: `You are a friendly home service assistant helping a customer who needs a ${serviceCategory}. They just described their problem. Write TWO things in one message:
-1. A SHORT empathetic acknowledgment (1 sentence, max 15 words) showing you understood their specific issue
-2. Then ask 1-2 quick follow-up questions to better understand the job scope (e.g., how long has this been happening? is there visible damage? what type/brand is it? have you tried anything?)
-
-Keep it conversational and brief. No bullet points. Just natural text.` },
-          { role: 'user', content: message.trim() }
-        ]
+        messages: aiMessages,
+        max_tokens: 300,
+        temperature: 0.7
       });
-      response = ackResponse.choices[0].message.content.trim();
+      aiResponse = completion.choices[0].message.content.trim();
     } catch (e) {
-      response = `Got it — sounds like you need help with that. Can you tell me a bit more? How long has this been going on, and have you noticed any other issues?`;
+      console.error('OpenAI error:', e.message);
+      return "I'm having trouble right now. Please try again in a moment.";
     }
-    
-    return response;
+
+    // Check for READY_TO_QUOTE tag
+    const quoteMatch = aiResponse.match(/<!--READY_TO_QUOTE:(.*?)-->/s);
+
+    if (quoteMatch) {
+      // Extract the conversational part (before the tag)
+      const conversationalPart = aiResponse.replace(/<!--READY_TO_QUOTE:.*?-->/s, '').trim();
+
+      let quoteData;
+      try {
+        quoteData = JSON.parse(quoteMatch[1]);
+      } catch (e) {
+        console.error('Failed to parse READY_TO_QUOTE JSON:', e.message);
+        // Save response without the tag and continue conversation
+        const cleanResponse = conversationalPart || "Can you tell me a bit more about the issue?";
+        db.saveChatMessage(phoneNumber, 'assistant', cleanResponse);
+        db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { customer_id: customer.id });
+        return cleanResponse;
+      }
+
+      // Map urgency
+      const urgencyMap = { 'low': 'low', 'medium': 'medium', 'high': 'high', 'emergency': 'emergency' };
+      const urgency = urgencyMap[quoteData.urgency] || 'medium';
+
+      // Generate quote
+      const quoteContext = {
+        urgency_level: urgency,
+        service_category: quoteData.category || 'general_handyman'
+      };
+      const { minCost, maxCost } = await this.generateQuote(quoteContext, selectedContractor);
+
+      // Create job
+      const { v4: uuidv4 } = require('uuid');
+      const jobUuid = uuidv4();
+      const jobId = db.createJob({
+        customer_id: customer.id,
+        job_uuid: jobUuid,
+        problem_description: quoteData.problem || quoteData.details,
+        service_category: quoteData.category || 'general_handyman',
+        urgency_level: urgency,
+        customer_address: selectedContractor.service_area_zip,
+        customer_zip: selectedContractor.service_area_zip,
+        estimated_cost_min: minCost,
+        estimated_cost_max: maxCost
+      });
+
+      const newContext = {
+        customer_id: customer.id,
+        job_id: jobId,
+        contractor_id: selectedContractor.id,
+        problem_description: quoteData.problem,
+        service_category: quoteData.category,
+        urgency_level: urgency
+      };
+
+      db.updateConversationState(phoneNumber, 'AWAITING_QUOTE_APPROVAL', newContext);
+
+      const quoteMessage = (conversationalPart ? conversationalPart + '\n\n' : '') +
+        `Here's what I've put together:\n\n` +
+        `💰 Estimated cost: $${minCost}-$${maxCost}\n` +
+        `🔧 ${selectedContractor.business_name}\n` +
+        `📅 Available: ${this.getAvailabilityText(selectedContractor)}\n\n` +
+        `Reply YES to book this job, or NO to cancel.`;
+
+      db.saveChatMessage(phoneNumber, 'assistant', quoteMessage);
+      return quoteMessage;
+    }
+
+    // No quote tag — just a conversational response
+    db.saveChatMessage(phoneNumber, 'assistant', aiResponse);
+    db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { customer_id: customer.id });
+    return aiResponse;
   }
+
+  // ---- Existing handlers (kept as-is) ----
 
   async handleContractorMessage(phoneNumber, message, contractor) {
     const upperMessage = message.toUpperCase().trim();
     
     if (upperMessage === 'DASHBOARD') {
-      // Generate dashboard login - this would be handled by dashboard.js
       return `Visit your dashboard: ${process.env.BASE_URL || 'http://localhost:3000'}/dashboard?phone=${encodeURIComponent(phoneNumber)}`;
     }
 
-    // Check if it's a response to a job notification (A/C/Q/X)
     if (['A', 'C', 'X'].includes(upperMessage) || upperMessage.startsWith('Q ')) {
       return await this.handleContractorJobResponse(phoneNumber, message, contractor);
     }
@@ -188,7 +290,6 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
       case 'hours':
         context.available_hours = await this.parseAvailableHours(message);
         
-        // Create contractor record
         try {
           const contractorId = db.createContractor({
             phone_number: phoneNumber,
@@ -216,96 +317,10 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
     }
   }
 
-  async handleCustomerIntake(phoneNumber, message, context) {
-    const step = context.step;
-
-    switch (step) {
-      case 'details':
-        // Customer answered our follow-up question — now we have more context
-        context.additional_details = message;
-        context.problem_description = (context.problem_description || '') + ' | Details: ' + message;
-        db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { ...context, step: 'urgency' });
-        return "Thanks for the details! That helps a lot.\n\nHow urgent is this? Reply with:\n1 - Not urgent, can wait a few days\n2 - Soon, within 1-2 days\n3 - Today if possible\n4 - Emergency, ASAP";
-
-      case 'problem_description':
-        context.problem_description = message;
-        context.service_category = await this.categorizeService(message);
-        
-        const diagnosticQuestion = await this.generateDiagnosticQuestion(message, context.service_category);
-        context.diagnostic_question = diagnosticQuestion;
-        
-        db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { ...context, step: 'diagnostic' });
-        return `Thanks! I understand you need help with ${context.service_category}.\n\n${diagnosticQuestion}`;
-
-      case 'diagnostic':
-        context.diagnostic_answer = message;
-        db.updateConversationState(phoneNumber, 'CUSTOMER_INTAKE', { ...context, step: 'urgency' });
-        return "How urgent is this? Reply with:\n1 - Not urgent, can wait a few days\n2 - Soon, within 1-2 days\n3 - Today if possible\n4 - Emergency, ASAP";
-
-      case 'urgency':
-        const urgencyMap = { '1': 'low', '2': 'medium', '3': 'high', '4': 'emergency' };
-        context.urgency_level = urgencyMap[message.trim()] || 'medium';
-        
-        // Categorize service if not done yet (happens when first message was the problem)
-        if (!context.service_category && context.problem_description) {
-          context.service_category = await this.categorizeService(context.problem_description);
-        }
-        context.service_category = context.service_category || 'general_handyman';
-        
-        // New model: each number belongs to one contractor, no need to ask for zip
-        const defaultContractor = db.getDefaultContractor ? db.getDefaultContractor() : null;
-        const allContractors = db.getAllContractors();
-        const selectedContractor = defaultContractor || (allContractors.length > 0 ? allContractors[0] : null);
-        
-        if (!selectedContractor) {
-          db.updateConversationState(phoneNumber, 'IDLE', {});
-          return "Sorry, this service isn't set up yet. Please try again later.";
-        }
-        
-        context.customer_address = selectedContractor.service_area_zip;
-        context.customer_zip = selectedContractor.service_area_zip;
-        const { minCost, maxCost } = await this.generateQuote(context, selectedContractor);
-        
-        // Create job record
-        const { v4: uuidv4 } = require('uuid');
-        const jobUuid = uuidv4();
-        
-        const jobId = db.createJob({
-          customer_id: context.customer_id,
-          job_uuid: jobUuid,
-          problem_description: context.problem_description,
-          service_category: context.service_category,
-          urgency_level: context.urgency_level,
-          customer_address: context.customer_address,
-          customer_zip: context.customer_zip,
-          estimated_cost_min: minCost,
-          estimated_cost_max: maxCost
-        });
-
-        context.job_id = jobId;
-        context.contractor_id = selectedContractor.id;
-        
-        db.updateConversationState(phoneNumber, 'AWAITING_QUOTE_APPROVAL', context);
-        
-        const quoteMessage = `Based on what you described, this looks like a ${context.service_category} job.\n\n` +
-          `💰 Estimated cost: $${minCost}-$${maxCost}\n` +
-          `🔧 ${selectedContractor.business_name}\n` +
-          `📅 Available: ${this.getAvailabilityText(selectedContractor)}\n\n` +
-          `Reply YES to book this job, or NO to cancel.`;
-        
-        return quoteMessage;
-
-      default:
-        db.updateConversationState(phoneNumber, 'IDLE', {});
-        return "Sorry, something went wrong. Please describe your problem again.";
-    }
-  }
-
   async handleQuoteApproval(phoneNumber, message, context) {
     const response = message.toUpperCase().trim();
     
     if (response === 'YES' || response === 'Y') {
-      // Customer approved the quote
       const job = db.getJobById(context.job_id);
       const contractor = db.getContractorById(context.contractor_id);
       
@@ -313,16 +328,6 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
         db.assignJobToContractor(context.job_id, context.contractor_id);
         db.updateJobStatus(context.job_id, 'quoted');
         
-        // Notify contractor
-        const contractorMessage = `🔔 NEW JOB REQUEST\n\n` +
-          `Problem: ${job.problem_description}\n` +
-          `Location: ${job.customer_address}\n` +
-          `Urgency: ${job.urgency_level}\n` +
-          `Est. Cost: $${job.estimated_cost_min}-$${job.estimated_cost_max}\n` +
-          `Customer: ${phoneNumber}\n\n` +
-          `Reply: A (approve), C (call customer), Q [amount] (custom quote), X (pass)`;
-        
-        // Log contractor notification for polling
         console.log('CONTRACTOR_NOTIFICATION:' + JSON.stringify({
           contractor_id: context.contractor_id,
           contractor_phone: contractor.phone_number,
@@ -343,7 +348,6 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
         return "Sorry, there was an error processing your request. Please try again.";
       }
     } else if (response === 'NO' || response === 'N') {
-      // Customer declined
       if (context.job_id) {
         db.updateJobStatus(context.job_id, 'cancelled');
       }
@@ -357,8 +361,6 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
   async handleContractorResponse(phoneNumber, message, contractor) {
     const response = message.toUpperCase().trim();
     
-    // This would find the pending job for this contractor
-    // For now, simplified - in production you'd track which job this response is for
     if (response === 'A') {
       return "Job approved! Customer will be notified and you'll receive scheduling details.";
     } else if (response === 'C') {
@@ -374,93 +376,34 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
   }
 
   async handleContractorJobResponse(phoneNumber, message, contractor) {
-    // Simplified - in production, you'd find the specific job this relates to
     return await this.handleContractorResponse(phoneNumber, message, contractor);
   }
 
   async handleScheduledJobMessages(phoneNumber, message, context) {
-    // Handle messages during scheduled job phase
     return "Your job is scheduled! I'll send reminders as the date approaches.";
   }
 
-  // AI Helper Methods
-  async categorizeService(problemDescription) {
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a service categorization expert. Categorize home service requests into one of these categories: plumbing, electrical, HVAC, general_handyman, appliance_repair, cleaning, landscaping, pest_control, roofing, flooring. Respond with just the category name.'
-          },
-          {
-            role: 'user',
-            content: problemDescription
-          }
-        ],
-        max_tokens: 20,
-        temperature: 0.1
-      });
-
-      return response.choices[0].message.content.trim().toLowerCase();
-    } catch (error) {
-      console.error('Error categorizing service:', error);
-      return 'general_handyman'; // fallback
-    }
-  }
-
-  async generateDiagnosticQuestion(problemDescription, category) {
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a diagnostic question generator for ${category} services. Ask ONE specific diagnostic question that would help a contractor understand the problem better and provide an accurate quote. Keep it conversational and under 50 words.`
-          },
-          {
-            role: 'user',
-            content: problemDescription
-          }
-        ],
-        max_tokens: 100,
-        temperature: 0.7
-      });
-
-      return response.choices[0].message.content.trim();
-    } catch (error) {
-      console.error('Error generating diagnostic question:', error);
-      return 'Can you tell me more details about the problem?';
-    }
-  }
+  // ---- AI Helper Methods ----
 
   async parseServices(servicesText, tradeType) {
     try {
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
-          {
-            role: 'system',
-            content: `Parse this ${tradeType} service description into a JSON array of specific services. Extract concrete services they offer. Return valid JSON only.`
-          },
-          {
-            role: 'user',
-            content: servicesText
-          }
+          { role: 'system', content: `Parse this ${tradeType} service description into a JSON array of specific services. Return valid JSON only.` },
+          { role: 'user', content: servicesText }
         ],
         max_tokens: 200,
         temperature: 0.1
       });
-
       return JSON.parse(response.choices[0].message.content.trim());
     } catch (error) {
       console.error('Error parsing services:', error);
-      return [servicesText]; // fallback
+      return [servicesText];
     }
   }
 
   async parseAvailableHours(hoursText) {
-    // Simple parsing for now - in production, use AI to parse complex schedules
     return { general: hoursText };
   }
 
@@ -476,7 +419,6 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
     const hourlyRate = contractor.hourly_rate;
     const urgencyMultiplier = baseMultipliers[context.urgency_level] || 1.2;
     
-    // Estimate 1-3 hours for most jobs (simplified)
     const minHours = 1;
     const maxHours = 3;
     
@@ -487,7 +429,6 @@ Keep it conversational and brief. No bullet points. Just natural text.` },
   }
 
   getAvailabilityText(contractor) {
-    // Simplified availability text
     return "This week";
   }
 }
