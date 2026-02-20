@@ -158,6 +158,11 @@ router.post('/jobs/:jobId/respond', async (req, res) => {
         await sms.sendSMS(customer.phone_number, customerMsg);
       } catch (e) { console.error('Failed to notify customer:', e.message); }
       
+      // Reset customer conversation state so they can start new requests
+      try {
+        db.updateConversationState(customer.phone_number, 'IDLE', {});
+      } catch (e) { console.error('Failed to reset customer state:', e.message); }
+      
       // Auto-create Google Calendar event if connected and scheduled
       let calendarEvent = null;
       if (scheduled_date) {
@@ -170,6 +175,8 @@ router.post('/jobs/:jobId/respond', async (req, res) => {
       res.json({ success: true, message: 'Job approved, customer notified', customerMsg, calendarEvent: calendarEvent?.htmlLink || null });
     } else if (action === 'X' || action === 'pass') {
       db.updateJobStatus(jobId, 'cancelled');
+      // Reset customer state so they can start fresh
+      try { db.updateConversationState(customer.phone_number, 'IDLE', {}); } catch (e) {}
       res.json({ success: true, message: 'Job passed' });
     } else if (action === 'Q' || action === 'quote') {
       db.queryRun('UPDATE jobs SET final_quote = ? WHERE id = ?', [amount, jobId]);
